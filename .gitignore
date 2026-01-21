@@ -1,0 +1,16 @@
+.idea
+.vscode
+CLAUDE.md
+
+# Build artifacts
+*.o
+*.a
+*.ko
+*.mod
+*.mod.c
+*.symvers
+*.order
+.*.cmd
+.tmp_versions/
+modules.order
+Module.symvers

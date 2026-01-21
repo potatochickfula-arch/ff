@@ -1,0 +1,131 @@
+From 8163e393b12322c7aad1a219a16b83ee3652def6 Mon Sep 17 00:00:00 2001
+From: rikka <ayasa0520@gmail.com>
+Date: Tue, 4 Nov 2025 15:14:59 +0800
+Subject: [PATCH] support linux-zen 6.17.7
+
+---
+ .gitignore               | 13 +++++++++++++
+ kernel/Kconfig           |  2 +-
+ kernel/ksu.c             |  2 +-
+ kernel/selinux/rules.c   | 12 ++++++++++++
+ kernel/selinux/selinux.c | 18 ++++++++----------
+ 5 files changed, 35 insertions(+), 12 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index ff9de9fed688..f561d4dcf550 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,3 +1,16 @@
+ .idea
+ .vscode
+ CLAUDE.md
++
++# Build artifacts
++*.o
++*.a
++*.ko
++*.mod
++*.mod.c
++*.symvers
++*.order
++.*.cmd
++.tmp_versions/
++modules.order
++Module.symvers
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+index 67f177f4708a..6217a4b83b88 100644
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -1,7 +1,7 @@
+ menu "KernelSU"
+ 
+ config KSU
+-	tristate "KernelSU function support"
++	bool "KernelSU function support"
+ 	depends on OVERLAY_FS
+ 	default y
+ 	help
+diff --git a/kernel/ksu.c b/kernel/ksu.c
+index a4ab2bf6c566..7c548f1efecb 100644
+--- a/kernel/ksu.c
++++ b/kernel/ksu.c
+@@ -89,4 +89,4 @@ module_exit(kernelsu_exit);
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("weishu");
+ MODULE_DESCRIPTION("Android KernelSU");
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
++MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+index 388b6cf7772b..e0ace89897d7 100644
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -30,6 +30,12 @@ void apply_kernelsu_rules()
+ {
+     struct policydb *db;
+ 
++    // Check if SELinux is actually enabled/initialized
++    if (!selinux_state.initialized || !selinux_state.policy) {
++        pr_info("SELinux not initialized or policy not loaded, skipping rules!\n");
++        return;
++    }
++
+     if (!getenforce()) {
+         pr_info("SELinux permissive or disabled, apply rules!\n");
+     }
+@@ -195,6 +201,12 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4)
+         return -1;
+     }
+ 
++    // Check if SELinux is actually enabled/initialized
++    if (!selinux_state.initialized || !selinux_state.policy) {
++        pr_info("SELinux not initialized or policy not loaded when handle policy!\n");
++        return -1;
++    }
++
+     if (!getenforce()) {
+         pr_info("SELinux permissive or disabled when handle policy!\n");
+     }
+diff --git a/kernel/selinux/selinux.c b/kernel/selinux/selinux.c
+index c35c1acff09e..c48eb08dc2ce 100644
+--- a/kernel/selinux/selinux.c
++++ b/kernel/selinux/selinux.c
+@@ -86,15 +86,14 @@ static inline u32 current_sid(void)
+ 
+ bool is_ksu_domain()
+ {
+-    char *domain;
+-    u32 seclen;
++    struct lsm_context ctx = {};
+     bool result;
+-    int err = security_secid_to_secctx(current_sid(), &domain, &seclen);
++    int err = security_secid_to_secctx(current_sid(), &ctx);
+     if (err) {
+         return false;
+     }
+-    result = strncmp(KERNEL_SU_DOMAIN, domain, seclen) == 0;
+-    security_release_secctx(domain, seclen);
++    result = strncmp(KERNEL_SU_DOMAIN, ctx.context, ctx.len) == 0;
++    security_release_secctx(&ctx);
+     return result;
+ }
+ 
+@@ -104,15 +103,14 @@ bool is_zygote(void *sec)
+     if (!tsec) {
+         return false;
+     }
+-    char *domain;
+-    u32 seclen;
++    struct lsm_context ctx = {};
+     bool result;
+-    int err = security_secid_to_secctx(tsec->sid, &domain, &seclen);
++    int err = security_secid_to_secctx(tsec->sid, &ctx);
+     if (err) {
+         return false;
+     }
+-    result = strncmp("u:r:zygote:s0", domain, seclen) == 0;
+-    security_release_secctx(domain, seclen);
++    result = strncmp("u:r:zygote:s0", ctx.context, ctx.len) == 0;
++    security_release_secctx(&ctx);
+     return result;
+ }
+ 
